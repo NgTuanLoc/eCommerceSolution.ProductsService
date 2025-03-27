@@ -1,1 +1,20 @@
-docker run --name my-mysql -e MYSQL_ROOT_PASSWORD=mysecretpassword -p 3306:3306 -v mysql_data:/var/lib/mysql -d mysql:latest
+# Start mysql container
+docker run --name my-mysql -e MYSQL_ROOT_PASSWORD=mysecretpassword --hostname=mysql-host-productsmicroservice -p 3306:3306 -v mysql_data:/var/lib/mysql -d mysql:latest
+
+docker build  -t products-microservice:1.0 -f ProductsMicroService.API/Dockerfile .
+
+docker tag products-microservice:1.0 tuanloc235/ecommerce-products-microservice:v1.0
+
+docker push tuanloc235/ecommerce-products-microservice:v1.0
+
+docker pull tuanloc235/ecommerce-products-microservice:v1.0
+
+docker run -p 8080:8080 tuanloc235/ecommerce-products-microservice:v1.0
+
+docker network create productsmicroservice-network
+docker network inspect productsmicroservice-network
+
+docker run --name my-mysql -e MYSQL_ROOT_PASSWORD=mysecretpassword --hostname=mysql-host-productsmicroservice -p 3306:3306 -v mysql_data:/var/lib/mysql -d --network=productsmicroservice-network mysql:latest
+
+# Seed script
+docker run --name my-mysql -e MYSQL_ROOT_PASSWORD=mysecretpassword --hostname=mysql-host-productsmicroservice -p 3306:3306 -v ./mysql-init:docker-entrypoint-initdb.d -d --network=productsmicroservice-network mysql:latest
