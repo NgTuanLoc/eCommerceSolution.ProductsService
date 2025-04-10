@@ -12,6 +12,8 @@ public static class ProductEndpoints
         //GET /api/products
         app.MapGet("/api/products", async (IProductService productsService) =>
         {
+            // await Task.Delay(100);
+            // throw new NotImplementedException();
             List<ProductResponse?> products = await productsService.GetProducts();
             return Results.Ok(products);
         });
@@ -20,7 +22,15 @@ public static class ProductEndpoints
         //GET /api/products/search/product-id/00000000-0000-0000-0000-000000000000
         app.MapGet("/api/products/search/product-id/{ProductID:guid}", async (IProductService productsService, Guid ProductID) =>
         {
+            // await Task.Delay(100);
+            // throw new NotImplementedException();
             ProductResponse? product = await productsService.GetProductByCondition(temp => temp.ProductId == ProductID);
+
+            if (product == null)
+            {
+                return Results.NotFound();
+            }
+
             return Results.Ok(product);
         });
 

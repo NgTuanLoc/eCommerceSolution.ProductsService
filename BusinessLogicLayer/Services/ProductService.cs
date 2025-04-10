@@ -5,16 +5,18 @@ using DataAccessLayer.Entities;
 using DataAccessLayer.RepositoryContracts;
 using FluentValidation;
 using System.Linq.Expressions;
+using BusinessLogicLayer.RabbitMQ;
 
 namespace BusinessLogicLayer.Services;
 
-public class ProductService(IValidator<ProductAddRequest> productAddRequestValidator, IValidator<ProductUpdateRequest> productUpdateRequestValidator, IMapper mapper, IProductsRepository productsRepository) : IProductService
+public class ProductService(IValidator<ProductAddRequest> productAddRequestValidator, IValidator<ProductUpdateRequest> productUpdateRequestValidator, IMapper mapper, IProductsRepository productsRepository, IRabbitMqPublisher publisher) : IProductService
 {
     private readonly IValidator<ProductAddRequest> _productAddRequestValidator = productAddRequestValidator;
     private readonly IValidator<ProductUpdateRequest> _productUpdateRequestValidator = productUpdateRequestValidator;
     private readonly IMapper _mapper = mapper;
     private readonly IProductsRepository _productsRepository = productsRepository;
-
+    private readonly IRabbitMqPublisher _publisher = publisher;
+    
     public async Task<ProductResponse?> AddProduct(ProductAddRequest productAddRequest)
     {
         ArgumentNullException.ThrowIfNull(productAddRequest);
@@ -25,14 +27,14 @@ public class ProductService(IValidator<ProductAddRequest> productAddRequestValid
         // Check the validation result
         if (!validationResult.IsValid)
         {
-            string errors = string.Join(", ", validationResult.Errors.Select(temp => temp.ErrorMessage)); //Error1, Error2, ...
+            var errors = string.Join(", ", validationResult.Errors.Select(temp => temp.ErrorMessage)); //Error1, Error2, ...
             throw new ArgumentException(errors);
         }
 
 
         //Attempt to add product
-        Product productInput = _mapper.Map<Product>(productAddRequest); //Map productAddRequest into 'Product' type (it invokes ProductAddRequestToProductMappingProfile)
-        Product? addedProduct = await _productsRepository.AddProduct(productInput);
+        var productInput = _mapper.Map<Product>(productAddRequest); //Map productAddRequest into 'Product' type (it invokes ProductAddRequestToProductMappingProfile)
+        var addedProduct = await _productsRepository.AddProduct(productInput);
 
         if (addedProduct == null)
         {
@@ -95,8 +97,9 @@ public class ProductService(IValidator<ProductAddRequest> productAddRequestValid
     {
         Product? existingProduct = await _productsRepository.GetProductByCondition(temp => temp.ProductId == productUpdateRequest.ProductId);
 
-
         ArgumentNullException.ThrowIfNull(existingProduct);
+        
+        var isProductNameChanged = productUpdateRequest.ProductName != existingProduct.ProductName;
 
         //Validate the product using Fluent Validation
         var validationResult = await _productUpdateRequestValidator.ValidateAsync(productUpdateRequest);
@@ -110,11 +113,19 @@ public class ProductService(IValidator<ProductAddRequest> productAddRequestValid
 
 
         //Map from ProductUpdateRequest to Product type
-        Product product = _mapper.Map<Product>(productUpdateRequest); //Invokes ProductUpdateRequestToProductMappingProfile
+        var product = _mapper.Map<Product>(productUpdateRequest); //Invokes ProductUpdateRequestToProductMappingProfile
 
-        Product? updatedProduct = await _productsRepository.UpdateProduct(product);
+        var updatedProduct = await _productsRepository.UpdateProduct(product);
 
-        ProductResponse? updatedProductResponse = _mapper.Map<ProductResponse>(updatedProduct);
+        if (isProductNameChanged)
+        {
+            const string routingKey = "product.update.name";
+            var message = new ProductNameUpdateMessage(product.ProductId, product.ProductName);
+                
+            _publisher.Publish<ProductNameUpdateMessage>(routingKey, message);
+        }
+
+        var updatedProductResponse = _mapper.Map<ProductResponse>(updatedProduct);
 
         return updatedProductResponse;
     }
